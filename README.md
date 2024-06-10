@@ -1,83 +1,70 @@
- # Local Development Setup
+# Downshift pull-request statistics API
 
-## Technology stack
+A small Express service that reads pull requests from the fixed `downshift-js/downshift` GitHub repository and summarizes opened and closed events by calendar month. It is an API integration exercise, not a general repository analyzer or a cached analytics platform.
 
-- Node 18.12.0
+## Run
 
-## Installation
+Use Node 22. All development tools are local dependencies; no global install or `sudo` is needed.
 
-### Requirements
-
-Before you get started, the following needs to be installed:
-  * **Node** 18.12.0
-  * **NPM** 8.19.2
-  * **nodemon** 2.0.20
-
-### Requirements
-
-### Setting up the development environment
-
-1.  Get the code. Clone this git repository and check out the latest release:
-
-    ```bash
-    git clone git_repo_link
-    cd project_folder
-    ```
-
-2.  Install nodemon by running the following command in the terminal:
-
-    ```bash
-    sudo npm install -g --force nodemon
-    ```
-
-3.  Install the required packages by running the following command in the project root directory:
-
-    ```bash
-    npm i
-    ```
-
-4.  Setup .env file, see the .env.example file
-     ```bash
-    Add the GITHUB_PERSONAL_ACCESS_TOKEN
-    To get token follow the steps given bellow
-
-    Go to your GitHub account's Personal Access Token settings
-
-    Click on "Generate new token."
-
-    Enter a token description, for example, "Repo Details API."
-
-    In the "Select scopes" section, you only need the "public_repo" scope for this project. Check the box next to "public_repo."
-
-    Click on "Generate token" at the bottom of the page.
-
-    Copy the generated token. Be sure to store it securely as it will not be shown again.
-
-    ```
-    ```bash
-    Add PORT
-    PORT will be 3000
-    ```
-
-    ```bash
-    Add API_VERSION
-    which is /api/v1
+```sh
+npm ci --ignore-scripts
+cp .env.example .env
+npm run build
+npm start
 ```
-   
 
-4.  Run server:
+The server listens at `http://127.0.0.1:3000`. Use `npm run dev` for local reloads. `PORT` defaults to `3000`; `API_VERSION` defaults to `/api/v1`. Interactive documentation is at `/api/v1/api-docs`.
 
-    ```
-    npm start
-    ```
+`GITHUB_PERSONAL_ACCESS_TOKEN` is optional and stays server-side. Public pull-request listing can be unauthenticated; see [GitHub's endpoint permissions](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests). Do not grant broad repository-write scopes just to read this public dataset. Rate limits may prevent a full retrieval without suitable authentication.
 
-5. To run testcases:
-    ```
-    npm test
-    ```
+## Requests and meaning
 
-### API ENDPOINTS
+```sh
+curl http://127.0.0.1:3000/api/v1/repo/stats
+curl 'http://127.0.0.1:3000/api/v1/repo/stats/summary?month=9&year=2021'
+curl 'http://127.0.0.1:3000/api/v1/repo/stats/year-summary?year=2021'
+```
 
-1.  See endpoints on swagger by hitting http://localhost:3000/api/v1/api-docs
+A synthetic two-PR fixture produces this all-month response:
 
+```json
+[
+  {"month":"September 2021","opened":2,"closed":0},
+  {"month":"October 2021","opened":0,"closed":1}
+]
+```
 
+These are example counts, not measured Downshift activity. A PR opened in September and closed in October contributes to both months. Reopened events are not reconstructed; the current GitHub `closed_at` field determines the closing month. Month keys are grouped in UTC, sorted chronologically and labeled in English independently of the host locale. Months with no events are omitted.
+
+| Route suffix under `/api/v1/repo/stats` | Response |
+| --- | --- |
+| `/` | All populated months |
+| `/summary?month=1..12&year=YYYY` | One month; 404 if absent |
+| `/year-summary?year=YYYY` | Populated months in that year; 404 if absent |
+
+Invalid dates, repeated query values and missing parameters return 400. Upstream failures return a generic 502 without provider diagnostics.
+
+## Design and checks
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant A as Express API
+  participant G as GitHub
+  C->>A: Request statistics
+  loop Until a page contains fewer than 100 PRs
+    A->>G: List pull requests, state=all
+    G-->>A: Page
+  end
+  A->>A: Aggregate created_at and closed_at in UTC
+  A-->>C: Sorted monthly counts
+```
+
+```sh
+npm run build
+npm test
+```
+
+Twelve offline tests cover pagination termination, monthly counts, query validation, missing data and upstream failure. GitHub is mocked, so tests need no account, token or network. Importing the app does not start a listener. The existing ts-jest release warns about TypeScript 5.0 compatibility; the build and these tests pass, but broader toolchain modernization has not been done.
+
+Every request fetches the repository again and retains all PRs in memory. There is no cache, request deduplication, API authentication or rate limiting. Before hosting, add bounded upstream timeouts, shared caching, concurrency controls and an explicit refresh policy. A multi-page crawl is not a point-in-time snapshot while the upstream repository changes. No live GitHub statistics were requested during verification.

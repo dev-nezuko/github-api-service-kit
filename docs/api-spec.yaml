@@ -18,7 +18,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Summary'
 
-  api/v1/repo/stats/summary:
+  /api/v1/repo/stats/summary:
     get:
       summary: Get a summary of pull requests for a specific month and year
       description: Retrieve a summary of opened and closed pull requests for a given month and year in the Downshift repository.

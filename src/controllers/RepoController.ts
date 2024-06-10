@@ -19,26 +19,10 @@ const getPullRequests = async (page: number): Promise<PullRequest[]> => {
 
 export const getAllPullRequests = async (): Promise<PullRequest[]> => {
   const pullRequests: PullRequest[] = []
-  const maxConcurrentRequests = 10 
-  let page: number = 1
-  let hasMoreData: boolean = true
-
-  while (hasMoreData) {
-    const requests: Promise<PullRequest[]>[] = []
-
-    for (let i = 0 ; i < maxConcurrentRequests ; i++) {
-      requests.push(getPullRequests(page++))
-    }
-
-    const results: PullRequest[][] = await Promise.all(requests)
-    hasMoreData = false
-
-    for (const result of results) {
-      if (result.length > 0) {
-        hasMoreData = true
-        pullRequests.push(...result)
-      }
-    }
+  for (let page = 1; ; page++) {
+    const batch = await getPullRequests(page)
+    pullRequests.push(...batch)
+    if (batch.length < 100) break
   }
 
   return pullRequests
@@ -69,9 +53,9 @@ export const summarizePullRequestsByMonth = (pullRequests: PullRequest[]): Summa
     }
   })
 
-  for (const month in months) {
+  for (const month of Object.keys(months).sort()) {
     summary.push({
-      month: new Date(month).toLocaleString('default', { month: 'long', year: 'numeric' }),
+      month: new Date(month + '-01T00:00:00Z').toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
       opened: months[month].opened,
       closed: months[month].closed,
     })

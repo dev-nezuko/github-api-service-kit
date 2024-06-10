@@ -22,11 +22,7 @@ router.get('/summary', async (req: Request, res: Response, next) => {
   }
 
   const pullRequests = await getAllPullRequests()
-  const summary: Summary[] = summarizePullRequestsByMonth(pullRequests)
-
-  const targetMonth = new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00Z`).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
-
-  const monthSummary = summary.find(item => item.month === targetMonth)
+  const [monthSummary] = summarizePullRequestsByMonth(pullRequests, `${year}-${month.padStart(2, '0')}`)
 
   if (!monthSummary) return res.status(404).send({ error: 'No data found for the given month and year.' })
 
@@ -41,11 +37,7 @@ router.get('/year-summary', async (req: Request, res: Response, next) => {
   if (typeof year !== 'string' || !/^[1-9][0-9]{3}$/.test(year)) return res.status(400).send({ error: 'The year query parameter is required.' })
 
   const pullRequests = await getAllPullRequests()
-  const summary = summarizePullRequestsByMonth(pullRequests)
-
-  const yearSummary = summary.filter(item => {
-    return item.month.endsWith(` ${year}`)
-  })
+  const yearSummary = summarizePullRequestsByMonth(pullRequests, `${year}-`)
 
   if (yearSummary.length === 0) return res.status(404).send({ error: 'No data found for the given year.' })
 

@@ -28,38 +28,35 @@ export const getAllPullRequests = async (): Promise<PullRequest[]> => {
   return pullRequests
 }
 
-export const summarizePullRequestsByMonth = (pullRequests: PullRequest[]): Summary[] => {
-  const summary: Summary[] = []
-  const months: { [key: string]: { opened: number , closed: number } } = {}
+// "YYYY-MM" in UTC, or null when the timestamp is missing or unparseable.
+const monthKey = (timestamp: string | null | undefined): string | null => {
+  if (!timestamp) return null
+  const date = new Date(timestamp)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 7)
+}
 
-  pullRequests.forEach((pullRequest) => {
-    const createdMonth = pullRequest.created_at
-      ? new Date(pullRequest.created_at).toISOString().slice(0, 7)
-      : ''
-    const closedMonth = pullRequest.closed_at
-      ? new Date(pullRequest.closed_at).toISOString().slice(0, 7)
-      : ''
+const monthLabel = (key: string): string =>
+  new Date(`${key}-01T00:00:00Z`).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 
-    if (!months[createdMonth]) {
-      months[createdMonth] = { opened: 0, closed: 0 }
-    }
-    months[createdMonth].opened++
-
-    if (closedMonth) {
-      if (!months[closedMonth]) {
-        months[closedMonth] = { opened: 0, closed: 0 }
-      }
-      months[closedMonth].closed++
-    }
-  })
-
-  for (const month of Object.keys(months).sort()) {
-    summary.push({
-      month: new Date(month + '-01T00:00:00Z').toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
-      opened: months[month].opened,
-      closed: months[month].closed,
-    })
+export const countPullRequestsByMonth = (pullRequests: PullRequest[]): Map<string, { opened: number; closed: number }> => {
+  const months = new Map<string, { opened: number; closed: number }>()
+  const bucket = (key: string) => {
+    let counts = months.get(key)
+    if (!counts) months.set(key, (counts = { opened: 0, closed: 0 }))
+    return counts
   }
 
-  return summary
+  for (const pullRequest of pullRequests) {
+    const opened = monthKey(pullRequest.created_at)
+    const closed = monthKey(pullRequest.closed_at)
+    if (opened) bucket(opened).opened++
+    if (closed) bucket(closed).closed++
+  }
+  return months
 }
+
+export const summarizePullRequestsByMonth = (pullRequests: PullRequest[], keyPrefix = ''): Summary[] =>
+  [...countPullRequestsByMonth(pullRequests)]
+    .filter(([key]) => key.startsWith(keyPrefix))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, counts]) => ({ month: monthLabel(key), ...counts }))

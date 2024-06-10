@@ -59,7 +59,7 @@ const requestPage = async (url: URL): Promise<{ pulls: PullRequest[]; next: stri
 
 // Follows GitHub's Link header rather than guessing page numbers. Oldest-first ordering keeps
 // PRs opened mid-crawl on the last page instead of shifting earlier pages; ids dedupe any overlap.
-export const getAllPullRequests = async (): Promise<PullRequest[]> => {
+const crawlPullRequests = async (): Promise<PullRequest[]> => {
   const base = new URL(process.env.GITHUB_API_URL || 'https://api.github.com')
   const first = new URL(REPO_PATH, base)
   first.search = new URLSearchParams({ state: 'all', sort: 'created', direction: 'asc', per_page: String(PER_PAGE) }).toString()
@@ -75,6 +75,27 @@ export const getAllPullRequests = async (): Promise<PullRequest[]> => {
   }
   return [...byNumber.values()]
 }
+
+const DEFAULT_CACHE_TTL_SECONDS = 300
+let cached: { pulls: Promise<PullRequest[]>; expiresAt: number } | null = null
+
+// A full crawl is ~20 requests and unauthenticated clients get 60 an hour, so concurrent requests
+// share one crawl and a successful result is reused for CACHE_TTL_SECONDS. Failures are not cached.
+export const getAllPullRequests = (): Promise<PullRequest[]> => {
+  if (cached && Date.now() < cached.expiresAt) return cached.pulls
+
+  const configured = Number(process.env.CACHE_TTL_SECONDS ?? DEFAULT_CACHE_TTL_SECONDS)
+  const ttlMs = (Number.isFinite(configured) && configured >= 0 ? configured : DEFAULT_CACHE_TTL_SECONDS) * 1000
+  const entry = { pulls: crawlPullRequests(), expiresAt: Infinity }
+  cached = entry
+  entry.pulls.then(
+    () => { entry.expiresAt = Date.now() + ttlMs },
+    () => { if (cached === entry) cached = null },
+  )
+  return entry.pulls
+}
+
+export const clearPullRequestCache = (): void => { cached = null }
 
 // "YYYY-MM" in UTC, or null when the timestamp is missing or unparseable.
 const monthKey = (timestamp: string | null | undefined): string | null => {

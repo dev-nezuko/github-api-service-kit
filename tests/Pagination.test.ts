@@ -1,4 +1,4 @@
-import { getAllPullRequests, UpstreamError } from '../src/controllers/RepoController'
+import { clearPullRequestCache, getAllPullRequests, UpstreamError } from '../src/controllers/RepoController'
 import { FakeGithub, FakePull, pagedPulls, startFakeGithub } from './support/fakeGithub'
 
 const pulls = (count: number, from = 1): FakePull[] =>
@@ -9,9 +9,10 @@ const serve = async (handler: Parameters<typeof startFakeGithub>[0]) => {
   fake = await startFakeGithub(handler)
   process.env.GITHUB_API_URL = fake.url
 }
+beforeEach(() => { clearPullRequestCache(); process.env.CACHE_TTL_SECONDS = '0' })
 afterEach(async () => {
   await fake?.close()
-  for (const key of ['GITHUB_API_URL', 'GITHUB_PERSONAL_ACCESS_TOKEN', 'GITHUB_TIMEOUT_MS']) delete process.env[key]
+  for (const key of ['GITHUB_API_URL', 'GITHUB_PERSONAL_ACCESS_TOKEN', 'GITHUB_TIMEOUT_MS', 'CACHE_TTL_SECONDS']) delete process.env[key]
 })
 
 it('follows Link headers until the last page, oldest first', async () => {
@@ -85,4 +86,33 @@ it('times out a stalled upstream with 504', async () => {
 it('rejects a non-array body', async () => {
   await serve((url, res) => { res.writeHead(200, { 'content-type': 'application/json' }).end('{"message":"moved"}') })
   expect(await failure()).toMatchObject({ status: 502 })
+})
+
+describe('caching', () => {
+  it('shares one crawl between concurrent callers and reuses it within the TTL', async () => {
+    process.env.CACHE_TTL_SECONDS = '60'
+    await serve(pagedPulls(pulls(150)))
+    const [a, b] = await Promise.all([getAllPullRequests(), getAllPullRequests()])
+    expect(a).toBe(b)
+    await getAllPullRequests()
+    expect(fake.requests).toHaveLength(2)
+  })
+
+  it('refetches once the TTL has passed', async () => {
+    await serve(pagedPulls(pulls(5)))
+    await getAllPullRequests()
+    await getAllPullRequests()
+    expect(fake.requests).toHaveLength(2)
+  })
+
+  it('does not cache a failed crawl', async () => {
+    process.env.CACHE_TTL_SECONDS = '60'
+    let calls = 0
+    await serve((url, res, req) => {
+      if (calls++ === 0) res.writeHead(500).end()
+      else pagedPulls(pulls(3))(url, res, req)
+    })
+    await expect(getAllPullRequests()).rejects.toMatchObject({ status: 502 })
+    expect(await getAllPullRequests()).toHaveLength(3)
+  })
 })

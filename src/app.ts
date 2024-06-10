@@ -14,6 +14,10 @@ const base = process.env.API_VERSION || '/api/v1'
 app.use(`${base}/repo/stats`, router)
 app.use(`${base}/api-docs`, swaggerUi.serve, swaggerUi.setup(swaggerDocument))
 
+app.use((_req: express.Request, res: express.Response) => {
+  res.status(404).json({ error: 'Not found.' })
+})
+
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof UpstreamError) {
     if (err.retryAfterSeconds) res.set('Retry-After', String(err.retryAfterSeconds))

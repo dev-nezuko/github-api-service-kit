@@ -33,6 +33,19 @@ it.each(['summary', 'summary?month=13&year=2021', 'summary?month=09&year=bad', '
   expect((await request(app).get('/api/v1/repo/stats/' + path)).status).toBe(400)
   expect(getPulls).not.toHaveBeenCalled()
 })
+it('says whether a parameter is missing or malformed', async () => {
+  const missing = await request(app).get('/api/v1/repo/stats/summary?month=9')
+  expect(missing.body.error).toBe('Query parameters required: month, year.')
+  const malformed = await request(app).get('/api/v1/repo/stats/summary?month=13&year=21')
+  expect(malformed.body.error).toBe('Invalid query: month must be 1-12, year must have four digits, each given once.')
+  const repeated = await request(app).get('/api/v1/repo/stats/year-summary?year=2021&year=2022')
+  expect(repeated.body.error).toBe('Invalid query: year must have four digits, each given once.')
+})
+it('answers unknown paths with JSON 404', async () => {
+  const response = await request(app).get('/api/v1/nope')
+  expect(response.status).toBe(404)
+  expect(response.body).toEqual({ error: 'Not found.' })
+})
 it('returns 404 for absent month', async () => {
   expect((await request(app).get('/api/v1/repo/stats/summary?month=1&year=2021')).status).toBe(404)
 })

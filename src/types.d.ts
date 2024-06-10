@@ -1,5 +1,6 @@
 export interface PullRequest {
   id: number;
+  number: number;
   title: string;
   created_at: string;
   updated_at: string;

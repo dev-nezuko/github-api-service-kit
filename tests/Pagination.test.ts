@@ -1,10 +1,56 @@
-const list = jest.fn()
-jest.mock('@octokit/rest', () => ({ Octokit: jest.fn(() => ({ rest: { pulls: { list: (...args: unknown[]) => list(...args) } } })) }))
 import { getAllPullRequests } from '../src/controllers/RepoController'
-it('stops at a partial page without requesting speculative pages', async () => {
-  const first = Array.from({ length: 100 }, () => ({ created_at: '2021-09-01T00:00:00Z', closed_at: null }))
-  list.mockResolvedValueOnce({ data: first }).mockResolvedValueOnce({ data: [first[0]] })
-  expect(await getAllPullRequests()).toHaveLength(101)
-  expect(list).toHaveBeenCalledTimes(2)
-  expect(list.mock.calls.map(call => call[0].page)).toEqual([1, 2])
+import { FakeGithub, FakePull, pagedPulls, startFakeGithub } from './support/fakeGithub'
+
+const pulls = (count: number, from = 1): FakePull[] =>
+  Array.from({ length: count }, (_, i) => ({ number: from + i, created_at: '2021-09-01T00:00:00Z', closed_at: null }))
+
+let fake: FakeGithub
+const serve = async (handler: Parameters<typeof startFakeGithub>[0]) => {
+  fake = await startFakeGithub(handler)
+  process.env.GITHUB_API_URL = fake.url
+}
+afterEach(async () => { await fake?.close(); delete process.env.GITHUB_API_URL; delete process.env.GITHUB_PERSONAL_ACCESS_TOKEN })
+
+it('follows Link headers until the last page, oldest first', async () => {
+  await serve(pagedPulls(pulls(201)))
+  expect(await getAllPullRequests()).toHaveLength(201)
+  expect(fake.requests.map(r => r.url.searchParams.get('page'))).toEqual([null, '2', '3'])
+  const first = fake.requests[0].url.searchParams
+  expect(first.get('state')).toBe('all')
+  expect(first.get('per_page')).toBe('100')
+  expect(first.get('sort')).toBe('created')
+  expect(first.get('direction')).toBe('asc')
+})
+
+it('stops after an exactly full last page without a speculative extra request', async () => {
+  await serve(pagedPulls(pulls(100)))
+  expect(await getAllPullRequests()).toHaveLength(100)
+  expect(fake.requests).toHaveLength(1)
+})
+
+it('counts a PR once when it appears on two pages', async () => {
+  const all = pulls(150)
+  await serve((url, res) => {
+    // A PR shifted across the page boundary between requests, so page 2 repeats #100.
+    const page2 = url.searchParams.get('page') === '2'
+    const headers: Record<string, string> = { 'content-type': 'application/json' }
+    if (!page2) headers.link = `<${fake.url}${url.pathname}?page=2>; rel="next"`
+    res.writeHead(200, headers).end(JSON.stringify(page2 ? all.slice(99) : all.slice(0, 100)))
+  })
+  expect(await getAllPullRequests()).toHaveLength(150)
+})
+
+it('sends the optional token only to the configured API host', async () => {
+  process.env.GITHUB_PERSONAL_ACCESS_TOKEN = 'test-token'
+  await serve((url, res) => {
+    res.writeHead(200, { 'content-type': 'application/json', link: '<http://elsewhere.invalid/next>; rel="next"' }).end('[]')
+  })
+  await expect(getAllPullRequests()).rejects.toThrow('another host')
+  expect(fake.requests).toHaveLength(1)
+  expect(fake.requests[0].headers.authorization).toBe('Bearer test-token')
+})
+
+it('rejects on an upstream error status', async () => {
+  await serve((url, res) => { res.writeHead(500).end() })
+  await expect(getAllPullRequests()).rejects.toThrow('500')
 })

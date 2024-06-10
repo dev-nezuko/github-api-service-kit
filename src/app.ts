@@ -1,10 +1,9 @@
-import 'dotenv/config'
 import express from 'express'
 import router from './routes'
 import { UpstreamError } from './controllers/RepoController'
 import swaggerUi from 'swagger-ui-express'
 import { parse } from 'yaml'
-import { readFileSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import path from 'path'
 
 const swaggerDocument = parse(readFileSync(path.join(__dirname, '../docs/api-spec.yaml'), 'utf8'))
@@ -25,6 +24,7 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 })
 
 if (require.main === module) {
+  if (existsSync('.env')) process.loadEnvFile('.env')
   const port = Number(process.env.PORT || 3000)
   app.listen(port, '127.0.0.1', () => console.log(`Server listening on port ${port}`))
 }

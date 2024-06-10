@@ -1,33 +1,35 @@
 {
-  "name": "github-api",
+  "name": "github-api-service-kit",
   "version": "1.0.0",
-  "description": "",
+  "description": "Express API that summarizes opened and closed pull requests of downshift-js/downshift by UTC month",
   "main": "dist/app.js",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.9.0 <23"
+  },
   "scripts": {
-    "dev": "nodemon --exec ts-node src/app.ts",
-    "build": "tsc",
+    "dev": "node --watch -r ts-node/register src/app.ts",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/app.js",
+    "lint": "tsc -p tsconfig.json",
     "test": "jest --runInBand"
   },
-  "keywords": [],
-  "license": "ISC",
   "dependencies": {
-    "dotenv": "^16.0.3",
     "express": "^5.3.0",
     "swagger-ui-express": "^5.0.1",
-    "ts-node": "^10.9.1",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@types/jest": "^29.5.0",
-    "@types/node": "^18.15.3",
-    "@types/supertest": "^2.0.12",
-    "jest": "^29.5.0",
-    "nodemon": "^2.0.21",
-    "supertest": "^6.3.3",
-    "ts-jest": "^29.0.5",
-    "ts-node": "^10.9.1",
-    "typescript": "5.0.2"
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.20.5",
+    "@types/supertest": "^7.2.1",
+    "@types/swagger-ui-express": "^4.1.8",
+    "jest": "^30.5.2",
+    "supertest": "^7.3.2",
+    "ts-jest": "^29.4.15",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
   }
 }

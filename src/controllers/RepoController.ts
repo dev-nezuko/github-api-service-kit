@@ -1,4 +1,3 @@
-import 'dotenv/config'
 import { PullRequest, Summary } from '../types'
 
 const REPO_PATH = '/repos/downshift-js/downshift/pulls'

@@ -46,7 +46,7 @@ it('counts a PR once when it appears on two pages', async () => {
 
 it('sends the optional token only to the configured API host', async () => {
   process.env.GITHUB_PERSONAL_ACCESS_TOKEN = 'test-token'
-  await serve((url, res) => {
+  await serve((_url, res) => {
     res.writeHead(200, { 'content-type': 'application/json', link: '<http://elsewhere.invalid/next>; rel="next"' }).end('[]')
   })
   await expect(getAllPullRequests()).rejects.toThrow('another host')
@@ -57,13 +57,13 @@ it('sends the optional token only to the configured API host', async () => {
 const failure = () => getAllPullRequests().then(() => { throw new Error('expected a rejection') }, (error: UpstreamError) => error)
 
 it('maps an upstream error status to 502', async () => {
-  await serve((url, res) => { res.writeHead(500).end() })
+  await serve((_url, res) => { res.writeHead(500).end() })
   expect(await failure()).toMatchObject({ status: 502, message: 'GitHub responded with 500.' })
 })
 
 it('reports primary rate limiting as 503 with the reset delay', async () => {
   const reset = Math.floor(Date.now() / 1000) + 120
-  await serve((url, res) => {
+  await serve((_url, res) => {
     res.writeHead(403, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(reset) }).end('{"message":"API rate limit exceeded"}')
   })
   const error = await failure()
@@ -73,7 +73,7 @@ it('reports primary rate limiting as 503 with the reset delay', async () => {
 })
 
 it('honours Retry-After on secondary rate limits', async () => {
-  await serve((url, res) => { res.writeHead(429, { 'retry-after': '30' }).end() })
+  await serve((_url, res) => { res.writeHead(429, { 'retry-after': '30' }).end() })
   expect(await failure()).toMatchObject({ status: 503, retryAfterSeconds: 30 })
 })
 
@@ -84,7 +84,7 @@ it('times out a stalled upstream with 504', async () => {
 })
 
 it('rejects a non-array body', async () => {
-  await serve((url, res) => { res.writeHead(200, { 'content-type': 'application/json' }).end('{"message":"moved"}') })
+  await serve((_url, res) => { res.writeHead(200, { 'content-type': 'application/json' }).end('{"message":"moved"}') })
   expect(await failure()).toMatchObject({ status: 502 })
 })
 

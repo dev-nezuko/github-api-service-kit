@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import express from 'express'
 import router from './routes'
+import { UpstreamError } from './controllers/RepoController'
 import swaggerUi from 'swagger-ui-express'
 import YAML from 'yamljs'
 import path from 'path'
@@ -13,8 +14,13 @@ const base = process.env.API_VERSION || '/api/v1'
 app.use(`${base}/repo/stats`, router)
 app.use(`${base}/api-docs`, swaggerUi.serve, swaggerUi.setup(swaggerDocument))
 
-app.use((_err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  res.status(502).json({ error: 'Unable to retrieve GitHub pull requests. Try again later.' })
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (err instanceof UpstreamError) {
+    if (err.retryAfterSeconds) res.set('Retry-After', String(err.retryAfterSeconds))
+    return res.status(err.status).json({ error: err.message })
+  }
+  console.error(err)
+  res.status(500).json({ error: 'Internal server error.' })
 })
 
 if (require.main === module) {

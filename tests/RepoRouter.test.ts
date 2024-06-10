@@ -1,5 +1,5 @@
 import request from 'supertest'
-import { getAllPullRequests } from '../src/controllers/RepoController'
+import { getAllPullRequests, UpstreamError } from '../src/controllers/RepoController'
 jest.mock('../src/controllers/RepoController', () => ({
   ...jest.requireActual('../src/controllers/RepoController'),
   getAllPullRequests: jest.fn(),
@@ -36,9 +36,17 @@ it.each(['summary', 'summary?month=13&year=2021', 'summary?month=09&year=bad', '
 it('returns 404 for absent month', async () => {
   expect((await request(app).get('/api/v1/repo/stats/summary?month=1&year=2021')).status).toBe(404)
 })
-it('handles provider failure without returning provider details', async () => {
-  getPulls.mockRejectedValue(new Error('private upstream diagnostic'))
+it('maps upstream failures to their status and Retry-After', async () => {
+  getPulls.mockRejectedValue(new UpstreamError('GitHub rate limit reached. Try again later.', 503, 42))
+  const response = await request(app).get('/api/v1/repo/stats/year-summary?year=2021')
+  expect(response.status).toBe(503)
+  expect(response.headers['retry-after']).toBe('42')
+  expect(response.body).toEqual({ error: 'GitHub rate limit reached. Try again later.' })
+})
+it('hides unexpected error details behind a 500', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => {})
+  getPulls.mockRejectedValue(new Error('private internal diagnostic'))
   const response = await request(app).get('/api/v1/repo/stats')
-  expect(response.status).toBe(502)
-  expect(JSON.stringify(response.body)).not.toContain('private upstream')
+  expect(response.status).toBe(500)
+  expect(JSON.stringify(response.body)).not.toContain('private internal')
 })

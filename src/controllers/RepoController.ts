@@ -3,6 +3,26 @@ import { PullRequest, Summary } from '../types'
 
 const REPO_PATH = '/repos/downshift-js/downshift/pulls'
 const PER_PAGE = 100
+const DEFAULT_TIMEOUT_MS = 10_000
+
+// Carries the HTTP status this API should answer with; the message is safe to show clients.
+export class UpstreamError extends Error {
+  constructor(message: string, readonly status: number, readonly retryAfterSeconds?: number) {
+    super(message)
+    this.name = 'UpstreamError'
+  }
+}
+
+const retryAfterSeconds = (headers: Headers): number | undefined => {
+  const retryAfter = Number(headers.get('retry-after'))
+  if (retryAfter > 0) return Math.ceil(retryAfter)
+  const reset = Number(headers.get('x-ratelimit-reset'))
+  return reset > 0 ? Math.max(1, Math.ceil(reset - Date.now() / 1000)) : undefined
+}
+
+const isRateLimited = (response: Response): boolean =>
+  response.status === 429 ||
+  (response.status === 403 && (response.headers.get('x-ratelimit-remaining') === '0' || response.headers.has('retry-after')))
 
 const nextPageUrl = (link: string | null): string | null =>
   link?.match(/<([^>]+)>\s*;\s*rel="next"/)?.[1] ?? null
@@ -16,9 +36,25 @@ const requestPage = async (url: URL): Promise<{ pulls: PullRequest[]; next: stri
   const token = process.env.GITHUB_PERSONAL_ACCESS_TOKEN
   if (token) headers.authorization = `Bearer ${token}`
 
-  const response = await fetch(url, { headers })
-  if (!response.ok) throw new Error(`GitHub responded with ${response.status}`)
-  return { pulls: (await response.json()) as PullRequest[], next: nextPageUrl(response.headers.get('link')) }
+  const timeoutMs = Number(process.env.GITHUB_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS
+  let response: Response
+  try {
+    response = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new UpstreamError('GitHub did not respond in time. Try again later.', 504)
+    }
+    throw new UpstreamError('Unable to reach GitHub. Try again later.', 502)
+  }
+
+  if (isRateLimited(response)) {
+    throw new UpstreamError('GitHub rate limit reached. Try again later.', 503, retryAfterSeconds(response.headers))
+  }
+  if (!response.ok) throw new UpstreamError(`GitHub responded with ${response.status}.`, 502)
+
+  const pulls: unknown = await response.json().catch(() => null)
+  if (!Array.isArray(pulls)) throw new UpstreamError('GitHub returned an unexpected response.', 502)
+  return { pulls: pulls as PullRequest[], next: nextPageUrl(response.headers.get('link')) }
 }
 
 // Follows GitHub's Link header rather than guessing page numbers. Oldest-first ordering keeps
@@ -35,7 +71,7 @@ export const getAllPullRequests = async (): Promise<PullRequest[]> => {
     for (const pull of pulls) byNumber.set(pull.number, pull)
     url = next ? new URL(next) : null
     // Never forward the token to a host other than the configured API.
-    if (url && url.origin !== base.origin) throw new Error('GitHub returned a next-page link on another host')
+    if (url && url.origin !== base.origin) throw new UpstreamError('GitHub returned a next-page link on another host.', 502)
   }
   return [...byNumber.values()]
 }

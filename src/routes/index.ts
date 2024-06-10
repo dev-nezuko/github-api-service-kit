@@ -10,7 +10,7 @@ router.get('/', async (req: Request, res: Response, next) => {
   const summary: Summary[] = summarizePullRequestsByMonth(pullRequests)
 
   res.send(summary)
-  } catch { next(new Error('GitHub request failed')) }
+  } catch (error) { next(error) }
 })
 
 router.get('/summary', async (req: Request, res: Response, next) => {
@@ -27,7 +27,7 @@ router.get('/summary', async (req: Request, res: Response, next) => {
   if (!monthSummary) return res.status(404).send({ error: 'No data found for the given month and year.' })
 
   res.send(monthSummary)
-  } catch { next(new Error('GitHub request failed')) }
+  } catch (error) { next(error) }
 })
 
 router.get('/year-summary', async (req: Request, res: Response, next) => {
@@ -42,7 +42,7 @@ router.get('/year-summary', async (req: Request, res: Response, next) => {
   if (yearSummary.length === 0) return res.status(404).send({ error: 'No data found for the given year.' })
 
   res.send(yearSummary)
-  } catch { next(new Error('GitHub request failed')) }
+  } catch (error) { next(error) }
 })
 
 export default router

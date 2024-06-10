@@ -1,4 +1,4 @@
-import { getAllPullRequests } from '../src/controllers/RepoController'
+import { getAllPullRequests, UpstreamError } from '../src/controllers/RepoController'
 import { FakeGithub, FakePull, pagedPulls, startFakeGithub } from './support/fakeGithub'
 
 const pulls = (count: number, from = 1): FakePull[] =>
@@ -9,7 +9,10 @@ const serve = async (handler: Parameters<typeof startFakeGithub>[0]) => {
   fake = await startFakeGithub(handler)
   process.env.GITHUB_API_URL = fake.url
 }
-afterEach(async () => { await fake?.close(); delete process.env.GITHUB_API_URL; delete process.env.GITHUB_PERSONAL_ACCESS_TOKEN })
+afterEach(async () => {
+  await fake?.close()
+  for (const key of ['GITHUB_API_URL', 'GITHUB_PERSONAL_ACCESS_TOKEN', 'GITHUB_TIMEOUT_MS']) delete process.env[key]
+})
 
 it('follows Link headers until the last page, oldest first', async () => {
   await serve(pagedPulls(pulls(201)))
@@ -50,7 +53,36 @@ it('sends the optional token only to the configured API host', async () => {
   expect(fake.requests[0].headers.authorization).toBe('Bearer test-token')
 })
 
-it('rejects on an upstream error status', async () => {
+const failure = () => getAllPullRequests().then(() => { throw new Error('expected a rejection') }, (error: UpstreamError) => error)
+
+it('maps an upstream error status to 502', async () => {
   await serve((url, res) => { res.writeHead(500).end() })
-  await expect(getAllPullRequests()).rejects.toThrow('500')
+  expect(await failure()).toMatchObject({ status: 502, message: 'GitHub responded with 500.' })
+})
+
+it('reports primary rate limiting as 503 with the reset delay', async () => {
+  const reset = Math.floor(Date.now() / 1000) + 120
+  await serve((url, res) => {
+    res.writeHead(403, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(reset) }).end('{"message":"API rate limit exceeded"}')
+  })
+  const error = await failure()
+  expect(error).toMatchObject({ status: 503 })
+  expect(error.retryAfterSeconds).toBeGreaterThanOrEqual(115)
+  expect(error.retryAfterSeconds).toBeLessThanOrEqual(121)
+})
+
+it('honours Retry-After on secondary rate limits', async () => {
+  await serve((url, res) => { res.writeHead(429, { 'retry-after': '30' }).end() })
+  expect(await failure()).toMatchObject({ status: 503, retryAfterSeconds: 30 })
+})
+
+it('times out a stalled upstream with 504', async () => {
+  process.env.GITHUB_TIMEOUT_MS = '150'
+  await serve(() => { /* never answers */ })
+  expect(await failure()).toMatchObject({ status: 504 })
+})
+
+it('rejects a non-array body', async () => {
+  await serve((url, res) => { res.writeHead(200, { 'content-type': 'application/json' }).end('{"message":"moved"}') })
+  expect(await failure()).toMatchObject({ status: 502 })
 })

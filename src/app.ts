@@ -3,10 +3,11 @@ import express from 'express'
 import router from './routes'
 import { UpstreamError } from './controllers/RepoController'
 import swaggerUi from 'swagger-ui-express'
-import YAML from 'yamljs'
+import { parse } from 'yaml'
+import { readFileSync } from 'fs'
 import path from 'path'
 
-const swaggerDocument = YAML.load(path.join(__dirname, '../docs/api-spec.yaml'))
+const swaggerDocument = parse(readFileSync(path.join(__dirname, '../docs/api-spec.yaml'), 'utf8'))
 
 const app = express()
 const base = process.env.API_VERSION || '/api/v1'

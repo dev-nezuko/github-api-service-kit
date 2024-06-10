@@ -16,17 +16,17 @@ export interface FakeGithub {
 }
 
 // Local stand-in for the GitHub REST API so tests and demos never reach api.github.com.
-export const startFakeGithub = async (handler: FakeHandler, port = 0): Promise<FakeGithub> => {
+export const startFakeGithub = async (handler: FakeHandler, port = 0, host = '127.0.0.1'): Promise<FakeGithub> => {
   const requests: FakeGithub['requests'] = []
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://fake.invalid')
     requests.push({ url, headers: req.headers })
     handler(url, res, req)
   })
-  await new Promise<void>(resolve => server.listen(port, '127.0.0.1', resolve))
+  await new Promise<void>(resolve => server.listen(port, host, resolve))
   const { port: bound } = server.address() as AddressInfo
   return {
-    url: `http://127.0.0.1:${bound}`,
+    url: `http://${host}:${bound}`,
     requests,
     close: () => new Promise(resolve => { server.closeAllConnections(); server.close(() => resolve()) }),
   }
@@ -64,5 +64,5 @@ export const demoPulls = (): FakePull[] =>
 
 if (require.main === module) {
   const port = Number(process.env.FAKE_GITHUB_PORT ?? 4010)
-  startFakeGithub(pagedPulls(demoPulls()), port).then(fake => console.log(`Fake GitHub API at ${fake.url}`))
+  startFakeGithub(pagedPulls(demoPulls()), port, process.env.FAKE_GITHUB_HOST ?? '127.0.0.1').then(fake => console.log(`Fake GitHub API at ${fake.url}`))
 }

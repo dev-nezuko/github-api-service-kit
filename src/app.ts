@@ -25,7 +25,8 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 
 if (require.main === module) {
   if (existsSync('.env')) process.loadEnvFile('.env')
+  const host = process.env.HOST || '127.0.0.1'
   const port = Number(process.env.PORT || 3000)
-  app.listen(port, '127.0.0.1', () => console.log(`Server listening on port ${port}`))
+  app.listen(port, host, () => console.log(`Server listening on http://${host}:${port}`))
 }
 export default app

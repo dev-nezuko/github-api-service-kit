@@ -1,0 +1,26 @@
+# dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# environment
+.env
+.env.*
+!.env.example
+
+# logs, caches, scratch
+*.log
+npm-debug.log*
+.npm/
+.cache/
+*.tsbuildinfo
+tmp/
+project_venv/
+
+# editor and OS
+.DS_Store
+.vscode/
+.idea/
+
+# not part of this project
+.github/

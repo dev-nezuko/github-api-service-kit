@@ -1,7 +1,10 @@
 openapi: 3.0.0
 info:
-  title: Github API
+  title: Downshift pull-request statistics
   version: 1.0.0
+  description: >-
+    Opened and closed pull-request counts for the downshift-js/downshift repository, grouped by UTC
+    calendar month. Months without events are omitted. Results are cached for CACHE_TTL_SECONDS.
 
 paths:
   /api/v1/repo/stats:
@@ -17,6 +20,12 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Summary'
+        502:
+          $ref: '#/components/responses/UpstreamFailure'
+        503:
+          $ref: '#/components/responses/RateLimited'
+        504:
+          $ref: '#/components/responses/UpstreamTimeout'
 
   /api/v1/repo/stats/summary:
     get:
@@ -25,7 +34,7 @@ paths:
       parameters:
         - name: month
           in: query
-          description: The target month (1-12)
+          description: The target month (1-12, leading zero allowed)
           required: true
           schema:
             type: integer
@@ -33,10 +42,12 @@ paths:
             maximum: 12
         - name: year
           in: query
-          description: The target year
+          description: The target four-digit year
           required: true
           schema:
             type: integer
+            minimum: 1000
+            maximum: 9999
       responses:
         200:
           description: A successful response with the summary of pull requests for the specified month and year
@@ -45,7 +56,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Summary'
         400:
-          description: Bad request due to missing required query parameters
+          description: A parameter is missing, malformed or repeated
           content:
             application/json:
               schema:
@@ -56,6 +67,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        502:
+          $ref: '#/components/responses/UpstreamFailure'
+        503:
+          $ref: '#/components/responses/RateLimited'
+        504:
+          $ref: '#/components/responses/UpstreamTimeout'
 
   /api/v1/repo/stats/year-summary:
     get:
@@ -64,10 +81,12 @@ paths:
       parameters:
         - name: year
           in: query
-          description: The target year
+          description: The target four-digit year
           required: true
           schema:
             type: integer
+            minimum: 1000
+            maximum: 9999
       responses:
         200:
           description: A successful response with the summary of pull requests by month for the specified year
@@ -78,7 +97,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Summary'
         400:
-          description: Bad request due to missing required query parameter
+          description: The year is missing, malformed or repeated
           content:
             application/json:
               schema:
@@ -89,15 +108,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        502:
+          $ref: '#/components/responses/UpstreamFailure'
+        503:
+          $ref: '#/components/responses/RateLimited'
+        504:
+          $ref: '#/components/responses/UpstreamTimeout'
 
 components:
+  responses:
+    UpstreamFailure:
+      description: GitHub returned an error or an unexpected response, or could not be reached
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: GitHub's rate limit was reached
+      headers:
+        Retry-After:
+          description: Seconds until GitHub expects to accept requests again, when known
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UpstreamTimeout:
+      description: A GitHub request exceeded GITHUB_TIMEOUT_MS
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
   schemas:
     Summary:
       type: object
       properties:
         month:
           type: string
-          description: The month and year (e.g., January 2021)
+          description: The UTC month and year in English, e.g. January 2021
         opened:
           type: integer
           description: The number of pull requests opened in the specified month
